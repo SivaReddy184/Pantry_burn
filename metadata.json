@@ -1,0 +1,6 @@
+{
+  "name": "PantryBurn",
+  "description": "Smart burn-rate pantry tracking app with automatic out-of-stock predictions, daily consumption logging, and price trends.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

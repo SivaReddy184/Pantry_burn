@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="database" path="grocery_tracker_database"/>
+    <include domain="database" path="grocery_tracker_database-shm"/>
+    <include domain="database" path="grocery_tracker_database-wal"/>
+    <include domain="sharedpref" path="pantry_settings.xml"/>
+</full-backup-content>
