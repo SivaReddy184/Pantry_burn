@@ -21,7 +21,14 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putBoolean("global_auto_paused", paused).apply()
         _isGlobalAutoPaused.value = paused
         if (!paused) {
-            runAutomatedDeductions()
+            viewModelScope.launch {
+                val now = System.currentTimeMillis()
+                val items = repository.allItems.first()
+                items.forEach { item ->
+                    repository.updateItem(item.copy(lastAutomatedDeductionDate = now))
+                }
+                runAutomatedDeductions()
+            }
         }
     }
 
@@ -58,7 +65,7 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
                     val deductionTimes = mutableListOf<Long>()
                     val cal = Calendar.getInstance().apply {
                         timeInMillis = lastRun
-                        set(Calendar.HOUR_OF_DAY, 8) // Daily automatic entry at 8:00 AM
+                        set(Calendar.HOUR_OF_DAY, 20) // Daily automatic entry at 8:00 PM
                         set(Calendar.MINUTE, 0)
                         set(Calendar.SECOND, 0)
                         set(Calendar.MILLISECOND, 0)
@@ -94,13 +101,13 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
                         
                         val updatedItem = item.copy(
                             currentStock = tempStock,
-                            lastAutomatedDeductionDate = lastProcessedTime
+                            lastAutomatedDeductionDate = if (tempStock <= 0) now else lastProcessedTime
                         )
                         repository.updateItem(updatedItem)
                     } else if (item.lastAutomatedDeductionDate == null) {
                         repository.updateItem(item.copy(lastAutomatedDeductionDate = now))
                     }
-                } else if (item.lastAutomatedDeductionDate == null) {
+                } else if (item.lastAutomatedDeductionDate == null || item.currentStock <= 0) {
                     repository.updateItem(item.copy(lastAutomatedDeductionDate = now))
                 }
             }
@@ -195,9 +202,14 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleItemPause(item: GroceryItem) {
         viewModelScope.launch {
-            val updated = item.copy(isPaused = !item.isPaused)
+            val willBePaused = !item.isPaused
+            val now = System.currentTimeMillis()
+            val updated = item.copy(
+                isPaused = willBePaused,
+                lastAutomatedDeductionDate = if (!willBePaused) now else item.lastAutomatedDeductionDate
+            )
             repository.updateItem(updated)
-            if (!updated.isPaused) {
+            if (!willBePaused && !_isGlobalAutoPaused.value) {
                 runAutomatedDeductions()
             }
         }
@@ -205,9 +217,13 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
 
     fun setItemTrackingMode(item: GroceryItem, mode: String) {
         viewModelScope.launch {
-            val updated = item.copy(trackingMode = mode)
+            val now = System.currentTimeMillis()
+            val updated = item.copy(
+                trackingMode = mode,
+                lastAutomatedDeductionDate = if (mode == "AUTOMATIC") now else item.lastAutomatedDeductionDate
+            )
             repository.updateItem(updated)
-            if (mode == "AUTOMATIC") {
+            if (mode == "AUTOMATIC" && !updated.isPaused && !_isGlobalAutoPaused.value) {
                 runAutomatedDeductions()
             }
         }
@@ -215,7 +231,19 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
 
     fun updateGroceryItem(item: GroceryItem) {
         viewModelScope.launch {
-            repository.updateItem(item)
+            val existing = repository.getItemById(item.id)
+            val now = System.currentTimeMillis()
+            val isNowActiveAuto = item.trackingMode == "AUTOMATIC" && !item.isPaused
+            val wasActiveAuto = existing != null && existing.trackingMode == "AUTOMATIC" && !existing.isPaused
+            val itemToSave = if (isNowActiveAuto && !wasActiveAuto) {
+                item.copy(lastAutomatedDeductionDate = now)
+            } else {
+                item
+            }
+            repository.updateItem(itemToSave)
+            if (isNowActiveAuto && !_isGlobalAutoPaused.value) {
+                runAutomatedDeductions()
+            }
         }
     }
 
@@ -229,6 +257,7 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val item = repository.getItemById(itemId) ?: return@launch
             val trimmedVendor = vendor.trim().ifEmpty { "Other" }
+            val now = System.currentTimeMillis()
             
             // Insert Purchase
             val purchase = Purchase(
@@ -240,14 +269,27 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
             )
             repository.insertPurchase(purchase)
 
-            // Update item stock, last purchase date and qty, and preferred vendor
+            // Update item stock, last purchase date and qty, preferred vendor, and reset lastAutomatedDeductionDate to now
             val updatedItem = item.copy(
                 currentStock = item.currentStock + quantity,
                 lastPurchaseDate = date,
                 lastPurchaseQty = quantity,
-                preferredVendor = trimmedVendor
+                preferredVendor = trimmedVendor,
+                lastAutomatedDeductionDate = now
             )
             repository.updateItem(updatedItem)
+        }
+    }
+
+    // Delete purchase log
+    fun deletePurchase(purchase: Purchase) {
+        viewModelScope.launch {
+            val item = repository.getItemById(purchase.itemId)
+            if (item != null) {
+                val updatedStock = (item.currentStock - purchase.quantityBought).coerceAtLeast(0.0)
+                repository.updateItem(item.copy(currentStock = updatedStock))
+            }
+            repository.deletePurchase(purchase)
         }
     }
 
@@ -272,10 +314,11 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
 
-            // Set currentStock to 0.0, apply the learned rate
+            // Set currentStock to 0.0, apply the learned rate, and update deduction date
             val updatedItem = item.copy(
                 currentStock = 0.0,
-                dailyConsumptionRate = if (newRate > 0) newRate else item.dailyConsumptionRate
+                dailyConsumptionRate = if (newRate > 0) newRate else item.dailyConsumptionRate,
+                lastAutomatedDeductionDate = now
             )
             repository.updateItem(updatedItem)
         }
@@ -285,7 +328,11 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
     fun adjustStock(itemId: Int, newStock: Double) {
         viewModelScope.launch {
             val item = repository.getItemById(itemId) ?: return@launch
-            repository.updateItem(item.copy(currentStock = newStock))
+            val now = System.currentTimeMillis()
+            repository.updateItem(item.copy(
+                currentStock = newStock,
+                lastAutomatedDeductionDate = if (newStock > 0 && item.currentStock <= 0) now else (item.lastAutomatedDeductionDate ?: now)
+            ))
         }
     }
 

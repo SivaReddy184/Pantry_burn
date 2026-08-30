@@ -423,8 +423,11 @@ fun MainAppScreen(viewModel: GroceryViewModel, modifier: Modifier = Modifier) {
                 )
                 4 -> LogsTab(
                     consumptionLogs = consumptionLogs,
+                    purchases = purchases,
+                    items = items,
                     onDeleteLog = { log -> viewModel.deleteConsumptionLog(log) },
-                    onEditLog = { log, qty, date -> viewModel.updateConsumptionLog(log, qty, date) }
+                    onEditLog = { log, qty, date -> viewModel.updateConsumptionLog(log, qty, date) },
+                    onDeletePurchase = { purchase -> viewModel.deletePurchase(purchase) }
                 )
             }
         }
@@ -578,6 +581,7 @@ fun ProductHistoryDialog(
     }
 
     var selectedTab by remember { mutableStateOf(0) }
+    var purchaseToDelete by remember { mutableStateOf<Purchase?>(null) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -642,7 +646,7 @@ fun ProductHistoryDialog(
                                 FilterChip(
                                     selected = item.trackingMode == "AUTOMATIC",
                                     onClick = { viewModel.setItemTrackingMode(item, "AUTOMATIC") },
-                                    label = { Text("Auto (8 AM)", fontSize = 11.sp) }
+                                    label = { Text("Auto (8 PM)", fontSize = 11.sp) }
                                 )
                                 FilterChip(
                                     selected = item.trackingMode == "MANUAL",
@@ -660,7 +664,7 @@ fun ProductHistoryDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (item.isPaused) "⏸️ Daily Auto Entries: PAUSED" else "▶️ Daily Auto Entries: ACTIVE (8 AM)",
+                                    text = if (item.isPaused) "⏸️ Daily Auto Entries: PAUSED" else "▶️ Daily Auto Entries: ACTIVE (8 PM)",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = if (item.isPaused) WarningSoon else StatusHealthy
@@ -726,7 +730,7 @@ fun ProductHistoryDialog(
                                                     shape = RoundedCornerShape(6.dp)
                                                 ) {
                                                     Text(
-                                                        text = if (log.isAutomated) "🤖 AUTO 8 AM" else "👤 MANUAL",
+                                                        text = if (log.isAutomated) "🤖 AUTO 8 PM" else "👤 MANUAL",
                                                         fontSize = 9.sp,
                                                         fontWeight = FontWeight.Bold,
                                                         color = if (log.isAutomated) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
@@ -784,7 +788,7 @@ fun ProductHistoryDialog(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Column {
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = "${qtyFormat.format(purchase.quantityBought)} ${item.unit} • ${priceFormat.format(purchase.totalPrice)}",
                                                 fontWeight = FontWeight.Bold,
@@ -803,6 +807,18 @@ fun ProductHistoryDialog(
                                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                                             )
                                         }
+
+                                        IconButton(
+                                            onClick = { purchaseToDelete = purchase },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Delete,
+                                                contentDescription = "Delete Buy Record",
+                                                tint = AlertOOS,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -811,6 +827,19 @@ fun ProductHistoryDialog(
                 }
             }
         }
+    }
+
+    purchaseToDelete?.let { purchase ->
+        DeletePurchaseConfirmDialog(
+            purchase = purchase,
+            itemName = item.name,
+            unit = item.unit,
+            onDismiss = { purchaseToDelete = null },
+            onConfirm = {
+                viewModel.deletePurchase(purchase)
+                purchaseToDelete = null
+            }
+        )
     }
 }
 
@@ -871,7 +900,7 @@ fun PantryTab(
             )
         )
 
-        // Global Auto-Deductions Toggle Bar (8 AM Daily)
+        // Global Auto-Deductions Toggle Bar (8 PM Daily)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -902,13 +931,13 @@ fun PantryTab(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = if (isGlobalAutoPaused) "Auto Deductions PAUSED" else "Daily Auto Deductions (8:00 AM)",
+                            text = if (isGlobalAutoPaused) "Auto Deductions PAUSED" else "Daily Auto Deductions (8:00 PM)",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isGlobalAutoPaused) WarningSoon else MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = if (isGlobalAutoPaused) "Automated entries stopped. Only manual logs allowed." else "Automated daily entries execute at 8:00 AM daily.",
+                            text = if (isGlobalAutoPaused) "Automated entries stopped. Only manual logs allowed." else "Automated daily entries execute at 8:00 PM daily.",
                             fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
@@ -1165,7 +1194,7 @@ fun PantryItemCard(
                                 onClick = onToggleItemPause
                             ) {
                                 Text(
-                                    text = "⏸️ Auto 8 AM Paused",
+                                    text = "⏸️ Auto 8 PM Paused",
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = WarningSoon,
@@ -1178,7 +1207,7 @@ fun PantryItemCard(
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
-                                    text = "🤖 Auto 8 AM",
+                                    text = "🤖 Auto 8 PM",
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
@@ -1564,15 +1593,42 @@ fun RestockCartTab(
     items: List<GroceryItem>,
     onRecordPurchase: (Int) -> Unit
 ) {
-    // Determine restock items: OOS or runs out in <= 7 days
-    val restockItems = items.filter {
-        val daysLeft = if (it.dailyConsumptionRate > 0) it.currentStock / it.dailyConsumptionRate else 0.0
-        it.currentStock <= 0.0 || (it.dailyConsumptionRate > 0 && daysLeft <= 7.0)
+    // Determine restock items: OOS or runs out in <= 7 days, sorted strictly by OOS urgency (OOS and soonest to run out at top)
+    val restockItems = remember(items) {
+        items.filter {
+            val daysLeft = if (it.dailyConsumptionRate > 0) it.currentStock / it.dailyConsumptionRate else 0.0
+            it.currentStock <= 0.0 || (it.dailyConsumptionRate > 0 && daysLeft <= 7.0)
+        }.sortedWith(
+            compareBy<GroceryItem> {
+                if (it.currentStock <= 0.0) 0.0
+                else if (it.dailyConsumptionRate <= 0.0) Double.MAX_VALUE
+                else it.currentStock / it.dailyConsumptionRate
+            }.thenBy { it.currentStock }
+             .thenBy { it.name.lowercase() }
+        )
     }
 
     // Group items by vendor (defaulting to "Other Vendors" if null or empty)
-    val groupedByVendor = restockItems.groupBy {
-        it.preferredVendor?.trim()?.ifEmpty { null } ?: "Other Vendors"
+    // Vendors sorted by most urgent item first, and items within each vendor strictly sorted by OOS urgency
+    val groupedByVendor = remember(restockItems) {
+        restockItems.groupBy {
+            it.preferredVendor?.trim()?.ifEmpty { null } ?: "Other Vendors"
+        }.mapValues { (_, vendorItems) ->
+            vendorItems.sortedWith(
+                compareBy<GroceryItem> {
+                    if (it.currentStock <= 0.0) 0.0
+                    else if (it.dailyConsumptionRate <= 0.0) Double.MAX_VALUE
+                    else it.currentStock / it.dailyConsumptionRate
+                }.thenBy { it.currentStock }
+                 .thenBy { it.name.lowercase() }
+            )
+        }.toList().sortedBy { (_, vendorItems) ->
+            vendorItems.minOfOrNull {
+                if (it.currentStock <= 0.0) 0.0
+                else if (it.dailyConsumptionRate <= 0.0) Double.MAX_VALUE
+                else it.currentStock / it.dailyConsumptionRate
+            } ?: Double.MAX_VALUE
+        }
     }
 
     // Interactive unchecked set to track shopping checked list visually
@@ -2935,7 +2991,7 @@ fun AddItemDialog(
                     FilterChip(
                         selected = trackingMode == "AUTOMATIC",
                         onClick = { trackingMode = "AUTOMATIC" },
-                        label = { Text("Automatic (8 AM)") },
+                        label = { Text("Automatic (8 PM)") },
                         modifier = Modifier.weight(1f)
                     )
                     FilterChip(
@@ -3682,7 +3738,7 @@ fun EditProductDialog(
                     FilterChip(
                         selected = trackingMode == "AUTOMATIC",
                         onClick = { trackingMode = "AUTOMATIC" },
-                        label = { Text("Automatic (8 AM)") },
+                        label = { Text("Automatic (8 PM)") },
                         modifier = Modifier.weight(1f)
                     )
                     FilterChip(
@@ -3937,15 +3993,72 @@ fun DeleteConsumptionConfirmDialog(
 }
 
 @Composable
+fun DeletePurchaseConfirmDialog(
+    purchase: Purchase,
+    itemName: String,
+    unit: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val qtyText = "${qtyFormat.format(purchase.quantityBought)} $unit"
+    val priceText = priceFormat.format(purchase.totalPrice)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete Buy Log?") },
+        text = { Text("Are you sure you want to delete this purchase entry ($qtyText for $priceText from ${purchase.vendor}) for $itemName? This will also reduce the current stock accordingly.") },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Delete Buy", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+sealed class ActivityLogItem(val timestamp: Long) {
+    data class Consumption(val logWithItem: ConsumptionLogWithItem) : ActivityLogItem(logWithItem.log.date)
+    data class Buy(val purchase: Purchase, val item: GroceryItem?) : ActivityLogItem(purchase.date)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun LogsTab(
     consumptionLogs: List<ConsumptionLogWithItem>,
+    purchases: List<Purchase>,
+    items: List<GroceryItem>,
     onDeleteLog: (ConsumptionLog) -> Unit,
-    onEditLog: (ConsumptionLog, Double, Long) -> Unit
+    onEditLog: (ConsumptionLog, Double, Long) -> Unit,
+    onDeletePurchase: (Purchase) -> Unit
 ) {
+    var selectedFilter by remember { mutableStateOf(0) } // 0: All, 1: Consumption, 2: Buys
     var logToEdit by remember { mutableStateOf<ConsumptionLogWithItem?>(null) }
     var logToDelete by remember { mutableStateOf<ConsumptionLogWithItem?>(null) }
+    var purchaseToDelete by remember { mutableStateOf<Pair<Purchase, GroceryItem?>?>(null) }
 
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault()) }
+    val itemMap = remember(items) { items.associateBy { it.id } }
+
+    val allActivities = remember(consumptionLogs, purchases, itemMap) {
+        val consumptionItems = consumptionLogs.map { ActivityLogItem.Consumption(it) }
+        val buyItems = purchases.map { ActivityLogItem.Buy(it, itemMap[it.itemId]) }
+        (consumptionItems + buyItems).sortedByDescending { it.timestamp }
+    }
+
+    val displayList = remember(selectedFilter, allActivities, consumptionLogs, purchases, itemMap) {
+        when (selectedFilter) {
+            1 -> consumptionLogs.sortedByDescending { it.log.date }.map { ActivityLogItem.Consumption(it) }
+            2 -> purchases.sortedByDescending { it.date }.map { ActivityLogItem.Buy(it, itemMap[it.itemId]) }
+            else -> allActivities
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -3953,20 +4066,44 @@ fun LogsTab(
             .padding(horizontal = 16.dp)
     ) {
         Text(
-            text = "Daily Consumption Logs",
+            text = "Activity & Tracking Logs",
             fontWeight = FontWeight.Bold,
             fontSize = 20.sp,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(top = 12.dp)
         )
         Text(
-            text = "Track, edit, or delete the exact quantities of foods you consumed.",
+            text = "Full audit trail of daily consumption logs and recorded grocery store purchases.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-            modifier = Modifier.padding(bottom = 12.dp)
+            modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        if (consumptionLogs.isEmpty()) {
+        // Filter Tab Row
+        PrimaryTabRow(
+            selectedTabIndex = selectedFilter,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 12.dp)
+        ) {
+            Tab(
+                selected = selectedFilter == 0,
+                onClick = { selectedFilter = 0 },
+                text = { Text("All (${allActivities.size})", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+            )
+            Tab(
+                selected = selectedFilter == 1,
+                onClick = { selectedFilter = 1 },
+                text = { Text("Intake (${consumptionLogs.size})", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+            )
+            Tab(
+                selected = selectedFilter == 2,
+                onClick = { selectedFilter = 2 },
+                text = { Text("Buys (${purchases.size})", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+            )
+        }
+
+        if (displayList.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3984,12 +4121,20 @@ fun LogsTab(
                         modifier = Modifier.size(64.dp)
                     )
                     Text(
-                        text = "No consumption logs recorded yet.",
+                        text = when (selectedFilter) {
+                            1 -> "No consumption logs recorded yet."
+                            2 -> "No purchase buys recorded yet."
+                            else -> "No logs recorded yet."
+                        },
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
                     )
                     Text(
-                        text = "Tap 'Consume' on any product in the Pantry tab to log your daily intake.",
+                        text = when (selectedFilter) {
+                            1 -> "Tap 'Consume' on any product in the Pantry tab to log your daily intake."
+                            2 -> "Record purchases from the Restock tab (bag button) or product cards to track restocks."
+                            else -> "Consumption entries and purchases will appear here in chronological order."
+                        },
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
@@ -4005,101 +4150,217 @@ fun LogsTab(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
-                items(consumptionLogs) { logWithItem ->
-                    val log = logWithItem.log
-                    val item = logWithItem.item
-                    val itemName = item?.name ?: "Deleted Product"
-                    val category = item?.category ?: "Unknown"
+                items(displayList) { activityItem ->
+                    when (activityItem) {
+                        is ActivityLogItem.Consumption -> {
+                            val logWithItem = activityItem.logWithItem
+                            val log = logWithItem.log
+                            val item = logWithItem.item
+                            val itemName = item?.name ?: "Deleted Product"
+                            val category = item?.category ?: "Unknown"
 
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
                                 Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(
-                                        text = itemName,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    if (log.isAutomated) {
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.secondaryContainer,
-                                            shape = RoundedCornerShape(4.dp)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             Text(
-                                                text = "AUTOMATED",
-                                                fontSize = 9.sp,
+                                                text = itemName,
                                                 fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                                letterSpacing = 0.5.sp
+                                                fontSize = 15.sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            if (log.isAutomated) {
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                                    shape = RoundedCornerShape(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "AUTO (8 PM)",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                        letterSpacing = 0.5.sp
+                                                    )
+                                                }
+                                            } else {
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                                    shape = RoundedCornerShape(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "MANUAL",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                        letterSpacing = 0.5.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Text(
+                                            text = category.uppercase(),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            letterSpacing = 0.5.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = dateFormat.format(Date(log.date)),
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                        )
+                                    }
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "-${qtyFormat.format(log.quantityConsumed)} ${log.unit}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.padding(end = 4.dp)
+                                        )
+
+                                        IconButton(
+                                            onClick = { logToEdit = logWithItem },
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Edit,
+                                                contentDescription = "Edit log",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+
+                                        IconButton(
+                                            onClick = { logToDelete = logWithItem },
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Delete,
+                                                contentDescription = "Delete log",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
                                 }
-                                Text(
-                                    text = category.uppercase(),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    letterSpacing = 0.5.sp
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = dateFormat.format(Date(log.date)),
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                )
                             }
+                        }
+                        is ActivityLogItem.Buy -> {
+                            val purchase = activityItem.purchase
+                            val item = activityItem.item
+                            val itemName = item?.name ?: "Grocery Item #${purchase.itemId}"
+                            val unit = item?.unit ?: "units"
+                            val category = item?.category ?: "Restock"
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
                             ) {
-                                Text(
-                                    text = "${qtyFormat.format(log.quantityConsumed)} ${log.unit}",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    color = MaterialTheme.colorScheme.secondary,
-                                    modifier = Modifier.padding(end = 8.dp)
-                                )
-
-                                IconButton(
-                                    onClick = { logToEdit = logWithItem },
-                                    modifier = Modifier.size(36.dp)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Edit,
-                                        contentDescription = "Edit log",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = itemName,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 15.sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "BOUGHT",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                    letterSpacing = 0.5.sp
+                                                )
+                                            }
+                                        }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = category.uppercase(),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                letterSpacing = 0.5.sp
+                                            )
+                                            Text(
+                                                text = "• Store: ${purchase.vendor}",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "${dateFormat.format(Date(purchase.date))} • ${priceFormat.format(purchase.totalPrice)} (${priceFormat.format(purchase.unitPrice)}/$unit)",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                        )
+                                    }
 
-                                IconButton(
-                                    onClick = { logToDelete = logWithItem },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Delete,
-                                        contentDescription = "Delete log",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "+${qtyFormat.format(purchase.quantityBought)} $unit",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(end = 4.dp)
+                                        )
+
+                                        IconButton(
+                                            onClick = { purchaseToDelete = Pair(purchase, item) },
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Delete,
+                                                contentDescription = "Delete purchase log",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -4127,6 +4388,19 @@ fun LogsTab(
             onConfirm = {
                 onDeleteLog(log.log)
                 logToDelete = null
+            }
+        )
+    }
+
+    purchaseToDelete?.let { (purchase, item) ->
+        DeletePurchaseConfirmDialog(
+            purchase = purchase,
+            itemName = item?.name ?: "Product #${purchase.itemId}",
+            unit = item?.unit ?: "units",
+            onDismiss = { purchaseToDelete = null },
+            onConfirm = {
+                onDeletePurchase(purchase)
+                purchaseToDelete = null
             }
         )
     }
