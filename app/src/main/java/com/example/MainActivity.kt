@@ -51,6 +51,228 @@ private val priceShortFormat = DecimalFormat("₹#,##0")
 private val qtyFormat = DecimalFormat("#,##0.##")
 private val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
 
+// Exact unit price formatter: does not round fractional costs (e.g. ₹0.56/g) to 0
+fun formatUnitPrice(price: Double): String {
+    return when {
+        price <= 0.0 -> "₹0"
+        price < 0.01 -> DecimalFormat("₹0.####").format(price)
+        price < 1.0 -> DecimalFormat("₹0.00##").format(price)
+        price % 1.0 == 0.0 -> DecimalFormat("₹#,##0").format(price)
+        else -> DecimalFormat("₹#,##0.00##").format(price)
+    }
+}
+
+// Rating color progression: 5 is green, decreasing to yellowish (3) and down to red (1)
+fun getRatingColor(rating: Int): Color {
+    return when (rating) {
+        5 -> Color(0xFF2E7D32) // Pure Green
+        4 -> Color(0xFF689F38) // Light / Lime Green
+        3 -> Color(0xFFFBC02D) // Yellowish / Amber
+        2 -> Color(0xFFF57C00) // Deep Orange
+        1 -> Color(0xFFD32F2F) // Red
+        else -> Color.Gray
+    }
+}
+
+fun getRatingLabel(rating: Int): String {
+    return when (rating) {
+        5 -> "5 ★ Excellent Quality"
+        4 -> "4 ★ Good Quality"
+        3 -> "3 ★ Average Quality"
+        2 -> "2 ★ Below Average"
+        1 -> "1 ★ Poor Quality"
+        else -> "Unrated"
+    }
+}
+
+@Composable
+fun RatingBar(
+    rating: Int?,
+    maxRating: Int = 5,
+    starSize: androidx.compose.ui.unit.Dp = 16.dp,
+    interactive: Boolean = false,
+    showBadge: Boolean = true,
+    onRatingChanged: ((Int) -> Unit)? = null
+) {
+    if (rating == null && !interactive) return
+
+    val activeColor = rating?.let { getRatingColor(it) } ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(1.dp)
+    ) {
+        for (i in 1..maxRating) {
+            val isFilled = rating != null && i <= rating
+            val tint = if (isFilled) activeColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+
+            if (interactive && onRatingChanged != null) {
+                Box(
+                    modifier = Modifier
+                        .size(starSize + 10.dp)
+                        .clickable { onRatingChanged(i) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isFilled) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                        contentDescription = "$i Star",
+                        tint = tint,
+                        modifier = Modifier.size(starSize)
+                    )
+                }
+            } else {
+                Icon(
+                    imageVector = if (isFilled) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                    contentDescription = "$i Star",
+                    tint = tint,
+                    modifier = Modifier.size(starSize)
+                )
+            }
+        }
+
+        if (showBadge && rating != null && rating > 0) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Surface(
+                color = activeColor.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Text(
+                    text = "$rating/5",
+                    color = activeColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun RatePurchaseDialog(
+    purchase: Purchase,
+    itemName: String,
+    initialBrandRating: Int? = null,
+    onDismiss: () -> Unit,
+    onConfirm: (rating: Int, brand: String?) -> Unit
+) {
+    var brand by remember { mutableStateOf(purchase.brand ?: "") }
+    var selectedRating by remember { mutableStateOf(purchase.rating ?: initialBrandRating ?: 5) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Rate Brand: $itemName",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Store: ${purchase.vendor} • ${dateFormat.format(Date(purchase.date))}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+
+                OutlinedTextField(
+                    value = brand,
+                    onValueChange = { brand = it },
+                    label = { Text("Brand Name") },
+                    placeholder = { Text("e.g. Amul, Tata, Nestle") },
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Select Quality Rating (1 - 5)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val activeColor = getRatingColor(selectedRating)
+                            for (starIndex in 1..5) {
+                                val isSelected = starIndex <= selectedRating
+                                val starTint = if (isSelected) activeColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                                IconButton(
+                                    onClick = { selectedRating = starIndex },
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isSelected) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                        contentDescription = "$starIndex Star",
+                                        tint = starTint,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Surface(
+                            color = getRatingColor(selectedRating).copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = getRatingLabel(selectedRating),
+                                color = getRatingColor(selectedRating),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            onConfirm(selectedRating, brand.trim().ifEmpty { null })
+                        },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Save Rating")
+                    }
+                }
+            }
+        }
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -419,7 +641,8 @@ fun MainAppScreen(viewModel: GroceryViewModel, modifier: Modifier = Modifier) {
                     spendingMetrics = spendingMetrics
                 )
                 3 -> PriceTrendsTab(
-                    itemsWithPurchases = itemsWithPurchases
+                    itemsWithPurchases = itemsWithPurchases,
+                    onGetBrandRating = { brand, itemId -> viewModel.getLatestRatingForBrand(brand, itemId) }
                 )
                 4 -> LogsTab(
                     consumptionLogs = consumptionLogs,
@@ -427,7 +650,9 @@ fun MainAppScreen(viewModel: GroceryViewModel, modifier: Modifier = Modifier) {
                     items = items,
                     onDeleteLog = { log -> viewModel.deleteConsumptionLog(log) },
                     onEditLog = { log, qty, date -> viewModel.updateConsumptionLog(log, qty, date) },
-                    onDeletePurchase = { purchase -> viewModel.deletePurchase(purchase) }
+                    onDeletePurchase = { purchase -> viewModel.deletePurchase(purchase) },
+                    onUpdatePurchaseRating = { purchase, rating, brand -> viewModel.updatePurchaseRating(purchase, rating, brand) },
+                    onGetBrandRating = { brand, itemId -> viewModel.getLatestRatingForBrand(brand, itemId) }
                 )
             }
         }
@@ -494,9 +719,10 @@ fun MainAppScreen(viewModel: GroceryViewModel, modifier: Modifier = Modifier) {
         if (selectedItem != null) {
             RecordPurchaseDialog(
                 item = selectedItem,
+                viewModel = viewModel,
                 onDismiss = { showRecordPurchaseDialogForItemId = null },
-                onConfirm = { qty, price, vendor ->
-                    viewModel.recordPurchase(itemId, qty, price, vendor)
+                onConfirm = { qty, price, vendor, brand, rating ->
+                    viewModel.recordPurchase(itemId, qty, price, vendor, brand, rating)
                     showRecordPurchaseDialogForItemId = null
                     Toast.makeText(context, "Purchase logged for ${selectedItem.name}!", Toast.LENGTH_SHORT).show()
                 }
@@ -797,10 +1023,14 @@ fun ProductHistoryDialog(
                                             )
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
-                                                text = "Vendor: ${purchase.vendor} • ${priceFormat.format(purchase.unitPrice)}/${item.unit}",
+                                                text = "Vendor: ${purchase.vendor}${if (!purchase.brand.isNullOrBlank()) " • Brand: ${purchase.brand}" else ""} • ${formatUnitPrice(purchase.unitPrice)}/${item.unit}",
                                                 fontSize = 11.sp,
                                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                             )
+                                            if (purchase.rating != null) {
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                RatingBar(rating = purchase.rating, starSize = 12.dp, interactive = false)
+                                            }
                                             Text(
                                                 text = dateStr,
                                                 fontSize = 10.sp,
@@ -2468,7 +2698,8 @@ fun AnalyticsTab(
 // ==================== PRICE TRENDS TAB ====================
 @Composable
 fun PriceTrendsTab(
-    itemsWithPurchases: List<GroceryItemWithPurchases>
+    itemsWithPurchases: List<GroceryItemWithPurchases>,
+    onGetBrandRating: ((String, Int) -> Int?)? = null
 ) {
     if (itemsWithPurchases.isEmpty()) {
         Box(
@@ -2542,11 +2773,11 @@ fun PriceTrendsTab(
                 onDismissRequest = { expandedDropdown = false },
                 modifier = Modifier.fillMaxWidth(0.9f)
             ) {
-                itemsWithPurchases.forEachIndexed { idx, entry ->
+                itemsWithPurchases.forEachIndexed { index, iwp ->
                     DropdownMenuItem(
-                        text = { Text(entry.item.name) },
+                        text = { Text(iwp.item.name) },
                         onClick = {
-                            selectedItemIndex = idx
+                            selectedItemIndex = index
                             expandedDropdown = false
                         }
                     )
@@ -2595,7 +2826,7 @@ fun PriceTrendsTab(
                     Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Lowest Deal", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
                         Text(
-                            text = lowestUnitCost?.let { "${priceShortFormat.format(it)}/${item.unit}" } ?: "N/A",
+                            text = lowestUnitCost?.let { "${formatUnitPrice(it)}/${item.unit}" } ?: "N/A",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = StatusHealthy
@@ -2605,7 +2836,7 @@ fun PriceTrendsTab(
                     Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Last Deal", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
                         Text(
-                            text = lastUnitCost?.let { "${priceShortFormat.format(it)}/${item.unit}" } ?: "N/A",
+                            text = lastUnitCost?.let { "${formatUnitPrice(it)}/${item.unit}" } ?: "N/A",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -2615,7 +2846,7 @@ fun PriceTrendsTab(
                     Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Avg Deal", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
                         Text(
-                            text = averageUnitCost?.let { "${priceShortFormat.format(it)}/${item.unit}" } ?: "N/A",
+                            text = averageUnitCost?.let { "${formatUnitPrice(it)}/${item.unit}" } ?: "N/A",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -2660,10 +2891,25 @@ fun PriceTrendsTab(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Amount: ${priceFormat.format(lowestPurchase.totalPrice)} for ${qtyFormat.format(lowestPurchase.quantityBought)} ${item.unit} (${priceShortFormat.format(lowestPurchase.unitPrice)}/${item.unit})",
+                            text = "Amount: ${priceFormat.format(lowestPurchase.totalPrice)} for ${qtyFormat.format(lowestPurchase.quantityBought)} ${item.unit} (${formatUnitPrice(lowestPurchase.unitPrice)}/${item.unit})",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
+                        if (!lowestPurchase.brand.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = "Brand: ${lowestPurchase.brand}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                val lRating = lowestPurchase.rating ?: onGetBrandRating?.invoke(lowestPurchase.brand, item.id)
+                                if (lRating != null) {
+                                    RatingBar(rating = lRating, starSize = 12.dp, interactive = false)
+                                }
+                            }
+                        }
                     } else {
                         Text(
                             text = "No purchase history available yet to calculate least price vendor.",
@@ -2737,6 +2983,14 @@ fun PriceTrendsTab(
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 13.sp
                                             )
+                                            if (!purchase.brand.isNullOrBlank()) {
+                                                Text(
+                                                    text = " • ${purchase.brand}",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.secondary
+                                                )
+                                            }
                                         }
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
@@ -2744,6 +2998,11 @@ fun PriceTrendsTab(
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                         )
+                                        val bRating = purchase.rating ?: purchase.brand?.let { onGetBrandRating?.invoke(it, item.id) }
+                                        if (bRating != null) {
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            RatingBar(rating = bRating, starSize = 12.dp, interactive = false)
+                                        }
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
                                         Text(
@@ -2753,7 +3012,7 @@ fun PriceTrendsTab(
                                             color = MaterialTheme.colorScheme.primary
                                         )
                                         Text(
-                                            text = "${priceShortFormat.format(purchase.unitPrice)}/${item.unit}",
+                                            text = "${formatUnitPrice(purchase.unitPrice)}/${item.unit}",
                                             fontSize = 10.sp,
                                             color = MaterialTheme.colorScheme.secondary
                                         )
@@ -2816,16 +3075,31 @@ fun PriceTrendsTab(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Column {
-                                        Text(
-                                            text = purchase.vendor,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = purchase.vendor,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                            if (!purchase.brand.isNullOrBlank()) {
+                                                Text(
+                                                    text = " • ${purchase.brand}",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.secondary
+                                                )
+                                            }
+                                        }
                                         Text(
                                             text = dateFormat.format(Date(purchase.date)),
                                             fontSize = 11.sp,
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                         )
+                                        val bRating = purchase.rating ?: purchase.brand?.let { onGetBrandRating?.invoke(it, item.id) }
+                                        if (bRating != null) {
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            RatingBar(rating = bRating, starSize = 12.dp, interactive = false)
+                                        }
                                     }
 
                                     Column(horizontalAlignment = Alignment.End) {
@@ -2851,7 +3125,7 @@ fun PriceTrendsTab(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Unit Cost: ${priceFormat.format(unitCost)} per ${item.unit}",
+                                        text = "Unit Cost: ${formatUnitPrice(unitCost)} per ${item.unit}",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
@@ -3079,12 +3353,34 @@ fun AddItemDialog(
 @Composable
 fun RecordPurchaseDialog(
     item: GroceryItem,
+    viewModel: GroceryViewModel,
     onDismiss: () -> Unit,
-    onConfirm: (quantity: Double, totalPrice: Double, vendor: String) -> Unit
+    onConfirm: (quantity: Double, totalPrice: Double, vendor: String, brand: String?, rating: Int?) -> Unit
 ) {
     var quantity by remember { mutableStateOf("") }
     var totalPrice by remember { mutableStateOf("") }
     var vendor by remember { mutableStateOf(item.preferredVendor ?: "Bigbasket") }
+    var brand by remember { mutableStateOf("") }
+    var rating by remember { mutableStateOf<Int?>(null) }
+    var hasManuallyChangedRating by remember { mutableStateOf(false) }
+
+    val knownBrands = remember(item.id) { viewModel.getKnownBrandsForItem(item.id) }
+
+    // When brand changes, check if there's an existing rating for this brand
+    val matchedRating = remember(brand) {
+        if (brand.isNotBlank()) viewModel.getLatestRatingForBrand(brand, item.id) else null
+    }
+
+    // If a previous rating exists for this brand and user hasn't manually overridden yet, preselect it
+    LaunchedEffect(matchedRating) {
+        if (matchedRating != null && !hasManuallyChangedRating) {
+            rating = matchedRating
+        }
+    }
+
+    val qtyVal = quantity.toDoubleOrNull()
+    val priceVal = totalPrice.toDoubleOrNull()
+    val unitPriceCalculated = if (qtyVal != null && qtyVal > 0 && priceVal != null && priceVal >= 0) priceVal / qtyVal else null
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -3096,9 +3392,9 @@ fun RecordPurchaseDialog(
         ) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
+                    .padding(20.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     text = "Record Buy: ${item.name}",
@@ -3127,16 +3423,154 @@ fun RecordPurchaseDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                if (unitPriceCalculated != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Exact Unit Rate:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "${formatUnitPrice(unitPriceCalculated)} / ${item.unit}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = vendor,
                     onValueChange = { vendor = it },
                     label = { Text("Store / Vendor Name") },
+                    placeholder = { Text("e.g. Bigbasket, D-Mart, Blinkit") },
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                // Brand Input
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedTextField(
+                        value = brand,
+                        onValueChange = {
+                            brand = it
+                            hasManuallyChangedRating = false
+                        },
+                        label = { Text("Brand Name (Optional)") },
+                        placeholder = { Text("e.g. Amul, Tata, Nestle") },
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (knownBrands.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            knownBrands.forEach { b ->
+                                AssistChip(
+                                    onClick = {
+                                        brand = b
+                                        hasManuallyChangedRating = false
+                                        val prev = viewModel.getLatestRatingForBrand(b, item.id)
+                                        if (prev != null) rating = prev
+                                    },
+                                    label = { Text(b, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Brand Quality Rating Section
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Brand Quality Rating",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (matchedRating != null && brand.isNotBlank()) {
+                                Surface(
+                                    color = getRatingColor(matchedRating).copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "★ Previous: $matchedRating/5",
+                                        color = getRatingColor(matchedRating),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Star selector with dynamic colors: 5=green, 4=lime, 3=yellow, 2=orange, 1=red
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val activeColor = rating?.let { getRatingColor(it) } ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                            for (starIndex in 1..5) {
+                                val isSelected = rating != null && starIndex <= rating!!
+                                val starTint = if (isSelected) activeColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                                IconButton(
+                                    onClick = {
+                                        hasManuallyChangedRating = true
+                                        rating = if (rating == starIndex) null else starIndex
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isSelected) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                        contentDescription = "$starIndex Star",
+                                        tint = starTint,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = if (rating != null) getRatingLabel(rating!!) else "Tap stars to rate brand quality (1=Red, 5=Green)",
+                            fontSize = 11.sp,
+                            fontWeight = if (rating != null) FontWeight.SemiBold else FontWeight.Normal,
+                            color = rating?.let { getRatingColor(it) } ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -3149,10 +3583,14 @@ fun RecordPurchaseDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            val qtyVal = quantity.toDoubleOrNull()
-                            val priceVal = totalPrice.toDoubleOrNull()
                             if (qtyVal != null && qtyVal > 0 && priceVal != null && priceVal >= 0) {
-                                onConfirm(qtyVal, priceVal, vendor)
+                                onConfirm(
+                                    qtyVal,
+                                    priceVal,
+                                    vendor,
+                                    brand.trim().ifEmpty { null },
+                                    rating
+                                )
                             }
                         },
                         shape = RoundedCornerShape(12.dp)
@@ -4036,12 +4474,15 @@ fun LogsTab(
     items: List<GroceryItem>,
     onDeleteLog: (ConsumptionLog) -> Unit,
     onEditLog: (ConsumptionLog, Double, Long) -> Unit,
-    onDeletePurchase: (Purchase) -> Unit
+    onDeletePurchase: (Purchase) -> Unit,
+    onUpdatePurchaseRating: ((Purchase, Int?, String?) -> Unit)? = null,
+    onGetBrandRating: ((String, Int) -> Int?)? = null
 ) {
     var selectedFilter by remember { mutableStateOf(0) } // 0: All, 1: Consumption, 2: Buys
     var logToEdit by remember { mutableStateOf<ConsumptionLogWithItem?>(null) }
     var logToDelete by remember { mutableStateOf<ConsumptionLogWithItem?>(null) }
     var purchaseToDelete by remember { mutableStateOf<Pair<Purchase, GroceryItem?>?>(null) }
+    var purchaseToRate by remember { mutableStateOf<Pair<Purchase, GroceryItem?>?>(null) }
 
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault()) }
     val itemMap = remember(items) { items.associateBy { it.id } }
@@ -4280,23 +4721,30 @@ fun LogsTab(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
                             ) {
-                                Row(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    // Header: Item name + BOUGHT badge on left, Quantity + Action buttons on right
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.weight(1f, fill = false)
                                         ) {
                                             Text(
                                                 text = itemName,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 15.sp,
-                                                color = MaterialTheme.colorScheme.onSurface
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                             Surface(
                                                 color = MaterialTheme.colorScheme.primaryContainer,
@@ -4312,53 +4760,141 @@ fun LogsTab(
                                                 )
                                             }
                                         }
+
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                                         ) {
                                             Text(
-                                                text = category.uppercase(),
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.SemiBold,
+                                                text = "+${qtyFormat.format(purchase.quantityBought)} $unit",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
                                                 color = MaterialTheme.colorScheme.primary,
-                                                letterSpacing = 0.5.sp
+                                                modifier = Modifier.padding(end = 4.dp)
                                             )
-                                            Text(
-                                                text = "• Store: ${purchase.vendor}",
-                                                fontSize = 10.sp,
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                            )
+
+                                            IconButton(
+                                                onClick = { purchaseToRate = Pair(purchase, item) },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (purchase.rating != null) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                                    contentDescription = "Rate purchase brand",
+                                                    tint = if (purchase.rating != null) getRatingColor(purchase.rating) else MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+
+                                            IconButton(
+                                                onClick = { purchaseToDelete = Pair(purchase, item) },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Delete,
+                                                    contentDescription = "Delete purchase log",
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
                                         }
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = "${dateFormat.format(Date(purchase.date))} • ${priceFormat.format(purchase.totalPrice)} (${priceFormat.format(purchase.unitPrice)}/$unit)",
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                        )
                                     }
 
+                                    // Category & Store line
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         Text(
-                                            text = "+${qtyFormat.format(purchase.quantityBought)} $unit",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
+                                            text = category.uppercase(),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
                                             color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(end = 4.dp)
+                                            letterSpacing = 0.5.sp
                                         )
+                                        Text(
+                                            text = "• Store: ${purchase.vendor}",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
 
-                                        IconButton(
-                                            onClick = { purchaseToDelete = Pair(purchase, item) },
-                                            modifier = Modifier.size(34.dp)
+                                    // Date, Total Price, and Unit Rate
+                                    Text(
+                                        text = "${dateFormat.format(Date(purchase.date))} • ${priceFormat.format(purchase.totalPrice)} (${formatUnitPrice(purchase.unitPrice)}/$unit)",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                                    )
+
+                                    // Brand & Star Rating full-width container (when brand or rating is present)
+                                    val currentRating = purchase.rating ?: purchase.brand?.let { onGetBrandRating?.invoke(it, purchase.itemId) }
+                                    val brandName = purchase.brand?.trim()
+                                    if (!brandName.isNullOrEmpty() || currentRating != null) {
+                                        val ratingColor = currentRating?.let { getRatingColor(it) } ?: MaterialTheme.colorScheme.primary
+                                        Surface(
+                                            color = if (currentRating != null) ratingColor.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(
+                                                0.5.dp,
+                                                if (currentRating != null) ratingColor.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                            ),
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Delete,
-                                                contentDescription = "Delete purchase log",
-                                                tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(18.dp)
-                                            )
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                ) {
+                                                    Text(
+                                                        text = "Brand:",
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                                    )
+                                                    Text(
+                                                        text = if (!brandName.isNullOrEmpty()) brandName else "Generic",
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+
+                                                if (currentRating != null) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    ) {
+                                                        RatingBar(
+                                                            rating = currentRating,
+                                                            starSize = 12.dp,
+                                                            interactive = false,
+                                                            showBadge = false
+                                                        )
+                                                        Text(
+                                                            text = "${currentRating}/5 • ${getRatingLabel(currentRating).substringAfter("★ ")}",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = ratingColor
+                                                        )
+                                                    }
+                                                } else {
+                                                    Text(
+                                                        text = "Tap ★ to rate",
+                                                        fontSize = 10.sp,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -4401,6 +4937,18 @@ fun LogsTab(
             onConfirm = {
                 onDeletePurchase(purchase)
                 purchaseToDelete = null
+            }
+        )
+    }
+
+    purchaseToRate?.let { (purchase, item) ->
+        RatePurchaseDialog(
+            purchase = purchase,
+            itemName = item?.name ?: "Product #${purchase.itemId}",
+            onDismiss = { purchaseToRate = null },
+            onConfirm = { rating, brand ->
+                onUpdatePurchaseRating?.invoke(purchase, rating, brand)
+                purchaseToRate = null
             }
         )
     }

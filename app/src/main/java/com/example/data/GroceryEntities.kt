@@ -27,7 +27,9 @@ data class Purchase(
     val date: Long, // timestamp in ms
     val quantityBought: Double,
     val totalPrice: Double,
-    val vendor: String // e.g., "Bigbasket", "D-Mart Ready", etc.
+    val vendor: String, // e.g., "Bigbasket", "D-Mart Ready", etc.
+    val brand: String? = null,
+    val rating: Int? = null // 1 to 5 stars
 ) {
     // Convenience property
     val unitPrice: Double

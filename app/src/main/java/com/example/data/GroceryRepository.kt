@@ -15,6 +15,7 @@ class GroceryRepository(private val groceryDao: GroceryDao) {
     suspend fun deleteItem(item: GroceryItem) = groceryDao.deleteItemWithRelations(item)
 
     suspend fun insertPurchase(purchase: Purchase): Long = groceryDao.insertPurchase(purchase)
+    suspend fun updatePurchase(purchase: Purchase) = groceryDao.updatePurchase(purchase)
     suspend fun deletePurchase(purchase: Purchase) = groceryDao.deletePurchase(purchase)
 
     fun getPurchasesForItem(itemId: Int): Flow<List<Purchase>> = groceryDao.getPurchasesForItem(itemId)

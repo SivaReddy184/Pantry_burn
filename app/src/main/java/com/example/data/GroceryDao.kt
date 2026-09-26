@@ -45,6 +45,9 @@ interface GroceryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPurchase(purchase: Purchase): Long
 
+    @Update
+    suspend fun updatePurchase(purchase: Purchase)
+
     @Delete
     suspend fun deletePurchase(purchase: Purchase)
     

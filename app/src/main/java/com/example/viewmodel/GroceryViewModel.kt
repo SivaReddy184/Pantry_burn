@@ -253,10 +253,19 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun recordPurchase(itemId: Int, quantity: Double, totalPrice: Double, vendor: String, date: Long = System.currentTimeMillis()) {
+    fun recordPurchase(
+        itemId: Int,
+        quantity: Double,
+        totalPrice: Double,
+        vendor: String,
+        brand: String? = null,
+        rating: Int? = null,
+        date: Long = System.currentTimeMillis()
+    ) {
         viewModelScope.launch {
             val item = repository.getItemById(itemId) ?: return@launch
             val trimmedVendor = vendor.trim().ifEmpty { "Other" }
+            val trimmedBrand = brand?.trim()?.ifEmpty { null }
             val now = System.currentTimeMillis()
             
             // Insert Purchase
@@ -265,7 +274,9 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
                 date = date,
                 quantityBought = quantity,
                 totalPrice = totalPrice,
-                vendor = trimmedVendor
+                vendor = trimmedVendor,
+                brand = trimmedBrand,
+                rating = rating
             )
             repository.insertPurchase(purchase)
 
@@ -279,6 +290,40 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
             )
             repository.updateItem(updatedItem)
         }
+    }
+
+    fun updatePurchase(purchase: Purchase) {
+        viewModelScope.launch {
+            repository.updatePurchase(purchase)
+        }
+    }
+
+    fun updatePurchaseRating(purchase: Purchase, rating: Int?, brand: String? = null) {
+        viewModelScope.launch {
+            val updated = purchase.copy(
+                rating = rating,
+                brand = brand?.trim()?.ifEmpty { null } ?: purchase.brand
+            )
+            repository.updatePurchase(updated)
+        }
+    }
+
+    fun getLatestRatingForBrand(brandName: String, itemId: Int? = null): Int? {
+        val trimmed = brandName.trim()
+        if (trimmed.isEmpty()) return null
+        val all = allPurchases.value
+        if (itemId != null) {
+            val forItem = all.firstOrNull { it.itemId == itemId && it.brand?.equals(trimmed, ignoreCase = true) == true && it.rating != null }
+            if (forItem?.rating != null) return forItem.rating
+        }
+        return all.firstOrNull { it.brand?.equals(trimmed, ignoreCase = true) == true && it.rating != null }?.rating
+    }
+
+    fun getKnownBrandsForItem(itemId: Int): List<String> {
+        val all = allPurchases.value
+        return all.filter { it.itemId == itemId && !it.brand.isNullOrBlank() }
+            .mapNotNull { it.brand?.trim() }
+            .distinct()
     }
 
     // Delete purchase log
