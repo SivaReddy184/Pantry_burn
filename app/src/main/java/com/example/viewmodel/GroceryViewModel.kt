@@ -314,7 +314,7 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
         val all = allPurchases.value
         if (itemId != null) {
             val forItem = all.firstOrNull { it.itemId == itemId && it.brand?.equals(trimmed, ignoreCase = true) == true && it.rating != null }
-            if (forItem?.rating != null) return forItem.rating
+            return forItem?.rating
         }
         return all.firstOrNull { it.brand?.equals(trimmed, ignoreCase = true) == true && it.rating != null }?.rating
     }
@@ -324,6 +324,25 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
         return all.filter { it.itemId == itemId && !it.brand.isNullOrBlank() }
             .mapNotNull { it.brand?.trim() }
             .distinct()
+    }
+
+    fun getBrandSuggestionsForItem(itemId: Int): List<BrandSuggestion> {
+        val all = allPurchases.value
+        val forThisItem = all.filter { it.itemId == itemId && !it.brand.isNullOrBlank() }
+
+        val itemBrandsMap = LinkedHashMap<String, Int?>()
+        forThisItem.sortedByDescending { it.date }.forEach { p ->
+            val b = p.brand!!.trim()
+            val key = b.lowercase()
+            if (!itemBrandsMap.containsKey(key)) {
+                val r = getLatestRatingForBrand(b, itemId)
+                itemBrandsMap[b] = r
+            }
+        }
+
+        return itemBrandsMap.map { (brandName, rating) ->
+            BrandSuggestion(brand = brandName, rating = rating, isForItem = true)
+        }
     }
 
     // Delete purchase log
@@ -661,4 +680,10 @@ class GroceryViewModel(application: Application) : AndroidViewModel(application)
 data class SpendingMetrics(
     val thisMonthSpending: Double = 0.0,
     val rolling30DaySpending: Double = 0.0
+)
+
+data class BrandSuggestion(
+    val brand: String,
+    val rating: Int?,
+    val isForItem: Boolean = true
 )
