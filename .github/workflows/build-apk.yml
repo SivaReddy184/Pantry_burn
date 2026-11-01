@@ -23,12 +23,38 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Prepare Debug Keystore
+      - name: Ensure Debug Keystore Exists
         run: |
           mkdir -p ~/.android
+
+          # 1. Decode from base64 if present
           if [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > ~/.android/debug.keystore
-            cp ~/.android/debug.keystore ./debug.keystore
+            echo "Decoding debug.keystore from debug.keystore.base64..."
+            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || base64 --decode debug.keystore.base64 > debug.keystore 2>/dev/null || true
+          fi
+
+          # 2. If debug.keystore is still missing or empty, generate a valid debug keystore
+          if [ ! -s debug.keystore ]; then
+            echo "Generating fresh debug.keystore with keytool..."
+            keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          # 3. Ensure it is also available in ~/.android
+          cp debug.keystore ~/.android/debug.keystore
+
+          echo "Debug keystore ready at $(pwd)/debug.keystore (size: $(wc -c < debug.keystore) bytes)"
+
+      - name: Ensure google-services.json Exists
+        run: |
+          if [ ! -f app/google-services.json ]; then
+            echo "Creating fallback google-services.json..."
+            cat << 'EOF' > app/google-services.json
+          {
+            "project_info": { "project_number": "123456789000", "project_id": "dietgrocerytracker-app", "storage_bucket": "dietgrocerytracker-app.appspot.com" },
+            "client": [{ "client_info": { "mobilesdk_app_id": "1:123456789000:android:0123456789abcdef", "android_client_info": { "package_name": "com.aistudio.dietgrocerytracker.qpxvwm" } }, "oauth_client": [], "api_key": [{ "current_key": "dummy_key" }], "services": { "analytics_service": { "status": 1 } } }],
+            "configuration_version": "1"
+          }
+          EOF
           fi
 
       - name: Build Debug APK
@@ -37,6 +63,6 @@ jobs:
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GroceryApp-Debug-APK
+          name: PantryBurn-Debug-APK
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
