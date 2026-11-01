@@ -58,11 +58,22 @@ jobs:
           fi
 
       - name: Build Debug APK
-        run: gradle :app:assembleDebug --no-daemon
+        run: gradle :app:assembleDebug --no-daemon -Djava.awt.headless=true
+
+      - name: Verify APK Generation
+        run: |
+          echo "=== Checking Output Directory ==="
+          ls -la app/build/outputs/apk/debug/
+          echo "=== Found APK ==="
+          ls -lh app/build/outputs/apk/debug/*.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/PantryBurn.apk
 
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
           name: PantryBurn-Debug-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/PantryBurn.apk
+          if-no-files-found: error
           retention-days: 14
