@@ -5,6 +5,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Android APK
@@ -77,3 +80,22 @@ jobs:
             app/build/outputs/apk/debug/PantryBurn.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: PantryBurn v1.0.${{ github.run_number }}
+          body: |
+            ### 🛒 PantryBurn Android App (Build #${{ github.run_number }})
+            New APK build automatically generated from commit `${{ github.sha }}`.
+
+            #### 📲 Download and Install:
+            - Click **`PantryBurn.apk`** below under **Assets** to download directly to your phone.
+            - Tap the downloaded APK to install.
+          files: |
+            app/build/outputs/apk/debug/PantryBurn.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
